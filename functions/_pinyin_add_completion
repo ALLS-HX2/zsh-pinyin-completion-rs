@@ -173,4 +173,4 @@ else
   compquote quoted_matches
 fi
 
-compadd -Qf -p "$display_prefix" -W "$word_dir" -a quoted_matches
+compadd -U -Qf -p "$display_prefix" -W "$word_dir" -a quoted_matches
