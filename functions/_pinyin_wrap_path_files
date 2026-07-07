@@ -1,0 +1,47 @@
+emulate -L zsh
+
+if (( ${+functions[_zsh_pinyin_orig_path_files]} )); then
+  return 0
+fi
+
+autoload -Uz +X _path_files 2>/dev/null || return 1
+
+if [[ ${functions[_path_files]} == *'_pinyin_add_completion'* ]]; then
+  return 0
+fi
+
+functions[_zsh_pinyin_orig_path_files]="${functions[_path_files]}"
+
+_path_files() {
+  local _zsh_pinyin_ret _zsh_pinyin_add_ret
+  local _zsh_pinyin_prefix="$PREFIX"
+  local _zsh_pinyin_suffix="$SUFFIX"
+  local _zsh_pinyin_iprefix="$IPREFIX"
+  local _zsh_pinyin_isuffix="$ISUFFIX"
+
+  _zsh_pinyin_orig_path_files "$@"
+  _zsh_pinyin_ret=$?
+
+  local _zsh_pinyin_post_prefix="$PREFIX"
+  local _zsh_pinyin_post_suffix="$SUFFIX"
+  local _zsh_pinyin_post_iprefix="$IPREFIX"
+  local _zsh_pinyin_post_isuffix="$ISUFFIX"
+
+  PREFIX="$_zsh_pinyin_prefix"
+  SUFFIX="$_zsh_pinyin_suffix"
+  IPREFIX="$_zsh_pinyin_iprefix"
+  ISUFFIX="$_zsh_pinyin_isuffix"
+
+  _pinyin_add_completion "$_zsh_pinyin_prefix" "$_zsh_pinyin_suffix" "$@"
+  _zsh_pinyin_add_ret=$?
+
+  PREFIX="$_zsh_pinyin_post_prefix"
+  SUFFIX="$_zsh_pinyin_post_suffix"
+  IPREFIX="$_zsh_pinyin_post_iprefix"
+  ISUFFIX="$_zsh_pinyin_post_isuffix"
+
+  (( _zsh_pinyin_add_ret == 0 )) && return 0
+  return $_zsh_pinyin_ret
+}
+
+return 0

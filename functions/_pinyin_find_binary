@@ -1,0 +1,21 @@
+emulate -L zsh
+
+local root="${ZSH_PINYIN_COMPLETION_ROOT:-${0:A:h:h}}"
+local candidate
+
+if (( ${+commands[bash-pinyin-completion-rs]} )); then
+  print -r -- "${commands[bash-pinyin-completion-rs]}"
+  return 0
+fi
+
+for candidate in \
+  "${root}/bin/bash-pinyin-completion-rs" \
+  "${root}/bash-pinyin-completion-rs/target/release/bash-pinyin-completion-rs"
+do
+  if [[ -x "$candidate" ]]; then
+    print -r -- "$candidate"
+    return 0
+  fi
+done
+
+return 1

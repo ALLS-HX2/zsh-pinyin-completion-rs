@@ -1,0 +1,176 @@
+emulate -L zsh -o extendedglob -o nullglob
+
+local raw_prefix="$1"
+shift 2
+
+[[ -z "$raw_prefix" ]] && return 1
+
+(( ${ZSH_PINYIN_COMPLETION_DISABLED:-0} )) && return 1
+
+local bin="${ZSH_PINYIN_COMPLETION_BIN:-}"
+[[ -x "$bin" ]] || return 1
+
+local lookup_prefix="${(Q)raw_prefix}"
+local lookup_dirpart display_dirpart basepart
+
+if [[ "$lookup_prefix" == */* ]]; then
+  lookup_dirpart="${lookup_prefix%/*}"
+  basepart="${lookup_prefix##*/}"
+else
+  lookup_dirpart=""
+  basepart="$lookup_prefix"
+fi
+
+if [[ "$raw_prefix" == */* ]]; then
+  display_dirpart="${raw_prefix%/*}"
+else
+  display_dirpart=""
+fi
+
+local lookup_dir="."
+local expanded_lookup suffix tilde_prefix tilde_user tilde_home
+
+if [[ -n "$lookup_dirpart" ]]; then
+  expanded_lookup="$(_pinyin_expand_env_refs "$lookup_dirpart")"
+
+  case "$expanded_lookup" in
+    "~")
+      expanded_lookup="$HOME"
+      ;;
+    "~/"*)
+      expanded_lookup="${HOME%/}/${expanded_lookup#~/}"
+      ;;
+    "~+")
+      expanded_lookup="$PWD"
+      ;;
+    "~+/"*)
+      expanded_lookup="${PWD%/}/${expanded_lookup#~+/}"
+      ;;
+    "~-")
+      expanded_lookup="${OLDPWD:-}"
+      ;;
+    "~-/"*)
+      [[ -n ${OLDPWD:-} ]] && expanded_lookup="${OLDPWD%/}/${expanded_lookup#~-/}"
+      ;;
+    "~"*)
+      tilde_prefix="${expanded_lookup%%/*}"
+      suffix=""
+      [[ "$expanded_lookup" == */* ]] && suffix="/${expanded_lookup#*/}"
+      tilde_user="${tilde_prefix#~}"
+      tilde_home=""
+
+      if [[ -n "$tilde_user" ]]; then
+        if (( ${+commands[getent]} )); then
+          tilde_home="$(getent passwd "$tilde_user" 2>/dev/null | cut -d: -f6)"
+        elif (( ${+commands[dscl]} )); then
+          tilde_home="$(dscl . -read "/Users/${tilde_user}" NFSHomeDirectory 2>/dev/null | awk '{ print $2; exit }')"
+        fi
+      fi
+
+      [[ -n "$tilde_home" ]] && expanded_lookup="${tilde_home}${suffix}"
+      ;;
+  esac
+
+  [[ -n "$expanded_lookup" ]] || return 1
+  lookup_dir="$expanded_lookup"
+fi
+
+[[ -d "$lookup_dir" ]] || return 1
+
+local dir_only=0
+local arg pat
+local -a patterns safe_patterns
+
+while (( $# )); do
+  arg="$1"
+  shift
+
+  case "$arg" in
+    -/)
+      dir_only=1
+      ;;
+    -g)
+      if (( $# )); then
+        patterns+=("$1")
+        [[ "$1" == *'(-/'* || "$1" == *'(/'* ]] && dir_only=1
+        shift
+      fi
+      ;;
+    -g*)
+      pat="${arg#-g}"
+      patterns+=("$pat")
+      [[ "$pat" == *'(-/'* || "$pat" == *'(/'* ]] && dir_only=1
+      ;;
+  esac
+done
+
+local saved_pwd="$PWD"
+local -a candidates filtered
+
+builtin cd -q -- "$lookup_dir" 2>/dev/null || return 1
+
+if (( dir_only )); then
+  candidates=(*(-/N:t) .*(-/N:t))
+else
+  candidates=(*(N:t) .*(N:t))
+fi
+
+builtin cd -q -- "$saved_pwd" 2>/dev/null || return 1
+
+(( $#candidates )) || return 1
+
+typeset -U candidates
+
+for pat in "$patterns[@]"; do
+  [[ -z "$pat" ]] && continue
+  [[ "$pat" == *'(#q'* || "$pat" == *'(-'* || "$pat" == *'(/'* ]] && continue
+  safe_patterns+=("$pat")
+done
+
+if (( $#safe_patterns )); then
+  for arg in "$candidates[@]"; do
+    for pat in "$safe_patterns[@]"; do
+      if [[ "$arg" == ${~pat} ]]; then
+        filtered+=("$arg")
+        break
+      fi
+    done
+  done
+  candidates=("$filtered[@]")
+fi
+
+(( $#candidates )) || return 1
+
+local output
+local -a pinyin_matched
+
+output="$(printf '%s\n' "$candidates[@]" | "$bin" "$basepart" 2>/dev/null)" || return 1
+pinyin_matched=(${(@f)output})
+
+(( $#pinyin_matched )) || return 1
+
+typeset -U pinyin_matched
+
+local display_prefix=""
+local word_dir="$lookup_dir"
+local -a quoted_matches
+
+if [[ -n "$display_dirpart" ]]; then
+  if [[ "$display_dirpart" == "/" ]]; then
+    display_prefix="/"
+  else
+    display_prefix="${display_dirpart}/"
+  fi
+fi
+
+[[ "$word_dir" == */ ]] || word_dir="${word_dir}/"
+
+quoted_matches=("$pinyin_matched[@]")
+
+if [[ -n "$display_prefix" ]]; then
+  compquote -p display_prefix quoted_matches
+else
+  compquote quoted_matches
+fi
+
+compadd -Qf -p "$display_prefix" -W "$word_dir" -a quoted_matches

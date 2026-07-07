@@ -1,0 +1,76 @@
+emulate -L zsh
+
+local input="$1"
+local result=""
+local ch var_name special_name
+integer i=1
+integer len=${#input}
+integer start
+
+while (( i <= len )); do
+  ch="${input[i]}"
+
+  if [[ "$ch" == "\\" ]]; then
+    (( i++ ))
+    if (( i <= len )); then
+      result+="${input[i]}"
+      (( i++ ))
+    fi
+    continue
+  fi
+
+  if [[ "$ch" == '$' ]]; then
+    (( i++ ))
+    if (( i > len )); then
+      result+='$'
+      break
+    fi
+
+    ch="${input[i]}"
+
+    if [[ "$ch" == "{" ]]; then
+      (( i++ ))
+      start=$i
+      while (( i <= len )) && [[ "${input[i]}" == [A-Za-z0-9_] ]]; do
+        (( i++ ))
+      done
+
+      var_name="${input:$(( start - 1 )):$(( i - start ))}"
+      if [[ -n "$var_name" ]] && (( i <= len )) && [[ "${input[i]}" == "}" ]]; then
+        (( i++ ))
+        result+="${(P)var_name}"
+      else
+        result+='$'
+        result+='{'
+        i=$start
+      fi
+      continue
+    fi
+
+    if [[ "$ch" == [A-Za-z_] ]]; then
+      start=$i
+      while (( i <= len )) && [[ "${input[i]}" == [A-Za-z0-9_] ]]; do
+        (( i++ ))
+      done
+
+      var_name="${input:$(( start - 1 )):$(( i - start ))}"
+      result+="${(P)var_name}"
+      continue
+    fi
+
+    if [[ "$ch" == [0-9@*#?] ]]; then
+      special_name="$ch"
+      (( i++ ))
+      result+="${(P)special_name}"
+      continue
+    fi
+
+    result+='$'
+    continue
+  fi
+
+  result+="$ch"
+  (( i++ ))
+done
+
+print -rn -- "$result"
